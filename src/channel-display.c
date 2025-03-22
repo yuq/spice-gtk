@@ -976,6 +976,7 @@ static void spice_display_channel_set_capabilities(SpiceChannel *channel)
     }
     if (spice_session_get_gl_scanout_enabled(s)) {
         spice_channel_set_capability(channel, SPICE_DISPLAY_CAP_GL_SCANOUT);
+        spice_channel_set_capability(channel, SPICE_DISPLAY_CAP_GL_SCANOUT2);
     }
     spice_channel_set_capability(channel, SPICE_DISPLAY_CAP_MULTI_CODEC);
 #ifdef HAVE_BUILTIN_MJPEG
@@ -2140,6 +2141,38 @@ static void display_handle_gl_scanout_unix(SpiceChannel *channel, SpiceMsgIn *in
 
     g_coroutine_object_notify(G_OBJECT(channel), "gl-scanout");
 }
+
+static void display_handle_gl_scanout2_unix(SpiceChannel *channel, SpiceMsgIn *in)
+{
+    SpiceDisplayChannel *display = SPICE_DISPLAY_CHANNEL(channel);
+    SpiceDisplayChannelPrivate *c = display->priv;
+    SpiceMsgDisplayGlScanout2Unix *scanout = spice_msg_in_parsed(in);
+
+    for (int i = 0; i < c->scanout.num_planes; i++) {
+        if (c->scanout.fd[i] >= 0) {
+            close(c->scanout.fd[i]);
+            c->scanout.fd[i] = -1;
+        }
+    }
+
+    if (scanout->num_dmabuf) {
+        spice_channel_unix_read_fd(channel, c->scanout.fd, scanout->num_dmabuf);
+    }
+
+    c->scanout.y0top = scanout->flags & SPICE_GL_SCANOUT_FLAGS_Y0TOP;
+    c->scanout.width = scanout->width;
+    c->scanout.height = scanout->height;
+    c->scanout.format = scanout->fourcc;
+    c->scanout.modifier = scanout->modifier;
+    c->scanout.num_planes = scanout->num_planes;
+
+    for (int i = 0; i < scanout->num_planes; i++) {
+        c->scanout.offset[i] = scanout->offset[i];
+        c->scanout.stride[i] = scanout->stride[i];
+    }
+
+    g_coroutine_object_notify(G_OBJECT(channel), "gl-scanout");
+}
 #endif
 
 /* coroutine context */
@@ -2236,6 +2269,7 @@ static void channel_set_handlers(SpiceChannelClass *klass)
         [ SPICE_MSG_DISPLAY_MONITORS_CONFIG ]    = display_handle_monitors_config,
 #ifdef G_OS_UNIX
         [ SPICE_MSG_DISPLAY_GL_SCANOUT_UNIX ]    = display_handle_gl_scanout_unix,
+        [ SPICE_MSG_DISPLAY_GL_SCANOUT2_UNIX ]   = display_handle_gl_scanout2_unix,
 #endif
         [ SPICE_MSG_DISPLAY_GL_DRAW ]            = display_handle_gl_draw,
     };
