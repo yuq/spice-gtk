@@ -630,8 +630,40 @@ gboolean spice_egl_update_scanout(SpiceDisplay *display,
                                   GError **err)
 {
     SpiceDisplayPrivate *d = display->priv;
-    EGLint attrs[13];
+    EGLint attrs[64];
     guint32 format;
+    int i = 0, j;
+
+    EGLint fd_attrs[] = {
+        EGL_DMA_BUF_PLANE0_FD_EXT,
+        EGL_DMA_BUF_PLANE1_FD_EXT,
+        EGL_DMA_BUF_PLANE2_FD_EXT,
+        EGL_DMA_BUF_PLANE3_FD_EXT,
+    };
+    EGLint offset_attrs[] = {
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT,
+        EGL_DMA_BUF_PLANE1_OFFSET_EXT,
+        EGL_DMA_BUF_PLANE2_OFFSET_EXT,
+        EGL_DMA_BUF_PLANE3_OFFSET_EXT,
+    };
+    EGLint stride_attrs[] = {
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,
+        EGL_DMA_BUF_PLANE1_PITCH_EXT,
+        EGL_DMA_BUF_PLANE2_PITCH_EXT,
+        EGL_DMA_BUF_PLANE3_PITCH_EXT,
+    };
+    EGLint modifier_lo_attrs[] = {
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
+        EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT,
+        EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT,
+        EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT,
+    };
+    EGLint modifier_hi_attrs[] = {
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT,
+        EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT,
+        EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT,
+        EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT,
+    };
 
     g_return_val_if_fail(scanout != NULL, FALSE);
     format = scanout->format;
@@ -644,19 +676,27 @@ gboolean spice_egl_update_scanout(SpiceDisplay *display,
     if (scanout->fd[0] == -1)
         return TRUE;
 
-    attrs[0] = EGL_DMA_BUF_PLANE0_FD_EXT;
-    attrs[1] = scanout->fd[0];
-    attrs[2] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
-    attrs[3] = scanout->stride[0];
-    attrs[4] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
-    attrs[5] = 0;
-    attrs[6] = EGL_WIDTH;
-    attrs[7] = scanout->width;
-    attrs[8] = EGL_HEIGHT;
-    attrs[9] = scanout->height;
-    attrs[10] = EGL_LINUX_DRM_FOURCC_EXT;
-    attrs[11] = format;
-    attrs[12] = EGL_NONE;
+    attrs[i++] = EGL_WIDTH;
+    attrs[i++] = scanout->width;
+    attrs[i++] = EGL_HEIGHT;
+    attrs[i++] = scanout->height;
+    attrs[i++] = EGL_LINUX_DRM_FOURCC_EXT;
+    attrs[i++] = format;
+
+    for (j = 0; j < scanout->num_planes; j++) {
+        attrs[i++] = fd_attrs[j];
+        attrs[i++] = scanout->fd[j] >= 0 ? scanout->fd[j] : scanout->fd[0];
+        attrs[i++] = stride_attrs[j];
+        attrs[i++] = scanout->stride[j];
+        attrs[i++] = offset_attrs[j];
+        attrs[i++] = scanout->offset[j];
+        attrs[i++] = modifier_lo_attrs[j];
+        attrs[i++] = (scanout->modifier >>  0) & 0xffffffff;
+        attrs[i++] = modifier_hi_attrs[j];
+        attrs[i++] = (scanout->modifier >> 32) & 0xffffffff;
+    }
+    attrs[i++] = EGL_NONE;
+
     DISPLAY_DEBUG(display, "fd[0]:%d stride[0]:%u y0:%d %ux%u format:0x%x (%c%c%c%c)",
                   scanout->fd[0], scanout->stride[0], scanout->y0top,
                   scanout->width, scanout->height, format,
