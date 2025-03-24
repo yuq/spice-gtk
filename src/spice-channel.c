@@ -928,13 +928,13 @@ static void spice_channel_write_msg(SpiceChannel *channel, SpiceMsgOut *out)
 }
 
 #ifdef G_OS_UNIX
-static ssize_t read_fd(int fd, int *msgfd)
+static ssize_t read_fd(int fd, int *msgfd, int num_fd)
 {
     struct msghdr msg = { NULL, };
     struct iovec iov[1];
     union {
         struct cmsghdr cmsg;
-        char control[CMSG_SPACE(sizeof(int))];
+        char control[CMSG_SPACE(sizeof(int) * 4)];
     } msg_control;
     struct cmsghdr *cmsg;
     ssize_t ret;
@@ -946,40 +946,36 @@ static ssize_t read_fd(int fd, int *msgfd)
     msg.msg_iov = iov;
     msg.msg_iovlen = 1;
     msg.msg_control = &msg_control;
-    msg.msg_controllen = sizeof(msg_control);
+    msg.msg_controllen = CMSG_SPACE(sizeof(int) * num_fd);
 
     ret = recvmsg(fd, &msg, 0);
     if (ret > 0) {
         for (cmsg = CMSG_FIRSTHDR(&msg);
              cmsg != NULL;
              cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)) ||
+            if (cmsg->cmsg_len != CMSG_LEN(sizeof(int) * num_fd) ||
                 cmsg->cmsg_level != SOL_SOCKET ||
                 cmsg->cmsg_type != SCM_RIGHTS) {
                 continue;
             }
 
-            memcpy(msgfd, CMSG_DATA(cmsg), sizeof(int));
-            if (*msgfd < 0) {
-                continue;
-            }
+            memcpy(msgfd, CMSG_DATA(cmsg), sizeof(int) * num_fd);
         }
     }
     return ret;
 }
 
 G_GNUC_INTERNAL
-gint spice_channel_unix_read_fd(SpiceChannel *channel)
+void spice_channel_unix_read_fd(SpiceChannel *channel, int *fd, int num_fd)
 {
     SpiceChannelPrivate *c = channel->priv;
-    gint fd = -1;
 
-    g_return_val_if_fail(g_socket_get_family(c->sock) == G_SOCKET_FAMILY_UNIX, -1);
+    g_return_if_fail(g_socket_get_family(c->sock) == G_SOCKET_FAMILY_UNIX);
 
     while (1) {
         /* g_socket_receive_message() is not convenient here because it
          * reads all control messages, and overly complicated to deal with */
-        if (read_fd(g_socket_get_fd(c->sock), &fd) > 0) {
+        if (read_fd(g_socket_get_fd(c->sock), fd, num_fd) > 0) {
             break;
         }
 
@@ -987,11 +983,9 @@ gint spice_channel_unix_read_fd(SpiceChannel *channel)
             g_coroutine_socket_wait(&c->coroutine, c->sock, G_IO_IN);
         } else {
             g_warning("failed to get fd: %s", g_strerror(errno));
-            return -1;
+            return;
         }
     }
-
-    return fd;
 }
 #endif
 

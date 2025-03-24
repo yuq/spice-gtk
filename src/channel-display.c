@@ -2116,7 +2116,7 @@ static void display_handle_gl_scanout_unix(SpiceChannel *channel, SpiceMsgIn *in
 
     scanout->drm_dma_buf_fd = -1;
     if (scanout->drm_fourcc_format != 0) {
-        scanout->drm_dma_buf_fd = spice_channel_unix_read_fd(channel);
+        spice_channel_unix_read_fd(channel, &scanout->drm_dma_buf_fd, 1);
         CHANNEL_DEBUG(channel, "gl scanout fd: %d", scanout->drm_dma_buf_fd);
     }
 
